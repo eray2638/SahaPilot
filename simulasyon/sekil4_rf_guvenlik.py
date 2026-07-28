@@ -78,23 +78,33 @@ def uret_ve_ciz(dosya_adi="sekil4_rf_guvenlik_tespiti.png"):
                 zaman.append(t)
                 rssi_yabanci.append(rssi)
 
+    zaman_bilinen = []
+    rssi_bilinen = []
+    for t, oui_listesi in enumerate(olcumler):
+        for oui, rssi in oui_listesi:
+            if oui != YETKISIZ_OUI:
+                zaman_bilinen.append(t)
+                rssi_bilinen.append(rssi)
+
     plt.figure(figsize=(9, 4.5))
+    plt.scatter(zaman_bilinen, rssi_bilinen, s=14, color="tab:green",
+                label="Known OUI (authorized device)")
     plt.scatter(zaman, rssi_yabanci, s=18, color="tab:red",
-                label="Yetkisiz OUI (DE:AD:BE) RSSI")
+                label="Unknown OUI (potential threat)")
     plt.axvline(T_YABANCI_BASLAR, color="gray", linestyle="--", linewidth=1,
-                label="Yabanci cihaz sahaya girebilir (t=30)")
+                label="Unauthorized device may enter field (t=30)")
     if kesin_tespit_t is not None:
-        plt.axvline(kesin_tespit_t, color="tab:green", linewidth=2,
-                    label=f"Tespit kesinlesti (t={kesin_tespit_t})")
-        plt.annotate("Tespit kesinlesti",
+        plt.axvline(kesin_tespit_t, color="tab:blue", linewidth=2,
+                    label=f"Detection confirmed (3 consecutive matches, t={kesin_tespit_t})")
+        plt.annotate("Detection confirmed",
                      xy=(kesin_tespit_t, -58),
                      xytext=(kesin_tespit_t + 3, -58),
                      fontsize=9)
 
-    plt.xlabel("Tarama adimi (t)")
+    plt.xlabel("Scan step (t)")
     plt.ylabel("RSSI (dBm)")
-    plt.title("Sekil 4 - RF Guvenlik: Yetkisiz Cihaz Tespiti")
-    plt.legend(loc="upper left")
+    plt.title("Figure 4 - RF Security: Unauthorized Device Detection")
+    plt.legend(loc="upper left", fontsize=8)
     plt.grid(alpha=0.3)
     plt.tight_layout()
     plt.savefig(dosya_adi, dpi=140)
