@@ -62,6 +62,18 @@ SahaPilot/
 └── docs/             Cost breakdown, hardware sourcing, roadmap notes
 ```
 
+## 4.1 Tests
+
+Unit tests for the simulation modules live in `tests/` (pytest):
+
+```bash
+pip install -r requirements-dev.txt
+pytest                                              # run the suite
+pytest --cov=simulasyon --cov-report=term-missing   # with coverage
+```
+
+Coverage is 99% of `simulasyon/` (only the `if __name__ == "__main__"` entry lines are uncovered). `tests/test_otonom_navigasyon.py::TestMainDongusu::test_main_dongusu_carpismasiz` is the regression test for the collision bug in section 3.3 — it replays the same 200 randomized seeds and asserts zero collisions.
+
 ## 5. Tech stack
 
 - **Simulation / control validation:** Python, NumPy, Matplotlib
