@@ -18,6 +18,8 @@ kontrolcu karsilastirilir. Euler integrasyonu ile ayrik zamanda cozulur.
 import numpy as np
 import matplotlib.pyplot as plt
 
+from saha_ortak import pd_kontrol, cift_entegrator, grafik_kaydet
+
 # ---------------- REFERANS SERIT ----------------
 def referans(x, genlik=2.0, periyot=24.0):
     """Ilerleme mesafesi x'e gore hafif kivrilan bir serit uretir."""
@@ -34,18 +36,13 @@ def simule_et(Kp, Kd, x_son=60.0, dx=0.02):
     """Verilen Kp/Kd ile aracin sinuzoidal seridi takibini simule eder."""
     adim = int(x_son / dx)
     x = np.linspace(0, x_son, adim)
-    y = np.zeros(adim)
-    yv = np.zeros(adim)   # yanal hiz (y')
 
-    for i in range(1, adim):
-        r  = referans(x[i - 1])
-        rv = referans_turev(x[i - 1])
-        hata      = r - y[i - 1]
-        hata_hizi = rv - yv[i - 1]
-        ivme = Kp * hata + Kd * hata_hizi
-        yv[i] = yv[i - 1] + ivme * dx
-        y[i]  = y[i - 1] + yv[i - 1] * dx
+    def ivme(i, y_onceki, v_onceki):
+        hata      = referans(x[i - 1]) - y_onceki
+        hata_hizi = referans_turev(x[i - 1]) - v_onceki
+        return pd_kontrol(hata, hata_hizi, Kp, Kd)
 
+    y, _ = cift_entegrator(ivme, adim, dx)
     return x, y
 
 
@@ -58,14 +55,9 @@ def uret_ve_ciz(dosya_adi="sekil2_pid_serit_takibi.png"):
     plt.plot(x, r, "k--", linewidth=1.2, label="Reference line")
     plt.plot(x, y_iyi, linewidth=2.0, label="PD control (Kp=4, Kd=2)")
     plt.plot(x, y_zayif, linewidth=1.4, label="Weakly-tuned control (Kp=0.5, Kd=0.05)")
-    plt.xlabel("Forward distance (m)")
-    plt.ylabel("Lateral position (m)")
-    plt.title("Figure 2 - PD-Controlled Line Tracking")
-    plt.legend(loc="upper right")
-    plt.grid(alpha=0.3)
-    plt.tight_layout()
-    plt.savefig(dosya_adi, dpi=140)
-    print("Kaydedildi:", dosya_adi)
+    grafik_kaydet(dosya_adi,
+                  "Forward distance (m)", "Lateral position (m)",
+                  "Figure 2 - PD-Controlled Line Tracking")
 
 
 if __name__ == "__main__":

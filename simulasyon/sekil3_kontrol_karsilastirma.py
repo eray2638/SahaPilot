@@ -18,6 +18,8 @@ Model yine y'' = u seklinde basit bir cift entegratordur.
 import numpy as np
 import matplotlib.pyplot as plt
 
+from saha_ortak import pd_kontrol, cift_entegrator, grafik_kaydet
+
 T_SON = 15.0
 DT    = 0.002
 U_SABIT = 1.2     # bang-bang icin sabit kuvvet buyuklugu
@@ -28,24 +30,21 @@ KD = 2.0
 def simule_et(strateji):
     adim = int(T_SON / DT)
     t = np.linspace(0, T_SON, adim)
-    e  = np.zeros(adim)   # hata (referans - konum)
-    ev = np.zeros(adim)   # hata hizi
-    e[0] = 1.0
 
-    for i in range(1, adim):
+    def ivme(i, e_onceki, ev_onceki):
         if strateji == "bangbang":
-            u = U_SABIT if e[i - 1] > 0 else -U_SABIT
+            u = U_SABIT if e_onceki > 0 else -U_SABIT
         elif strateji == "p":
-            u = KP * e[i - 1]
+            u = KP * e_onceki
         elif strateji == "pd":
-            u = KP * e[i - 1] + KD * ev[i - 1]
+            u = pd_kontrol(e_onceki, ev_onceki, KP, KD)
         else:
             raise ValueError("bilinmeyen strateji")
-
         # y'' = u  ->  e'' = -u  (hata azaltma yonunde ivme)
-        ev[i] = ev[i - 1] - u * DT
-        e[i]  = e[i - 1] + ev[i - 1] * DT
+        return -u
 
+    # e (hata) baslangic degeri 1.0; hiz 0.
+    e, _ = cift_entegrator(ivme, adim, DT, y0=1.0)
     return t, e
 
 
@@ -59,14 +58,9 @@ def uret_ve_ciz(dosya_adi="sekil3_kontrol_karsilastirma.png"):
     plt.plot(t, e_p,  linewidth=1.2, label="Proportional only (undamped oscillation)")
     plt.plot(t, e_pd, linewidth=2.0, label="PD (settles by t~2s)")
     plt.axhline(0, color="gray", linewidth=0.8)
-    plt.xlabel("Time (s)")
-    plt.ylabel("Lateral error e(t)")
-    plt.title("Figure 3 - Bang-Bang / P / PD Control Comparison")
-    plt.legend(loc="upper right")
-    plt.grid(alpha=0.3)
-    plt.tight_layout()
-    plt.savefig(dosya_adi, dpi=140)
-    print("Kaydedildi:", dosya_adi)
+    grafik_kaydet(dosya_adi,
+                  "Time (s)", "Lateral error e(t)",
+                  "Figure 3 - Bang-Bang / P / PD Control Comparison")
 
 
 if __name__ == "__main__":
