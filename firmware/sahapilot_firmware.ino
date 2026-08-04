@@ -42,9 +42,20 @@ const float KP = 4.0;
 const float KD = 2.0;
 const float ESIK_ENGEL_CM = 15.0;   // bu mesafenin altinda engelden kac
 
+// Guvenli-tarafta-kal (fail-safe) esikleri: sensor arizasi veya cizgi
+// kaybi durumunda arac korumasiz ilerlemeye devam etmemelidir.
+const int MAX_ARDISIK_ECHO_ARIZASI = 3;  // ust uste takili echo hatti -> dur
+const int MAX_ARDISIK_CIZGI_KAYBI = 5;   // ust uste cizgisiz kare -> dur
+
+// mesafe_olc_cm() donus kodlari: negatif degerler gecerli olcum degildir.
+const float MESAFE_MENZIL_DISI = -1.0;   // echo yok: menzilde engel yok
+const float MESAFE_SENSOR_ARIZASI = -2.0;  // echo hatti tetiklemeden HIGH
+
 // ---------------- DURUM DEGISKENLERI ----------------
 float onceki_hata = 0.0;
 unsigned long onceki_zaman_ms = 0;
+int ardisik_echo_arizasi = 0;
+int ardisik_cizgi_kaybi = 0;
 
 void setup() {
   Serial.begin(115200);
@@ -68,19 +79,27 @@ void setup() {
 // Donusum mantigi Python'daki ir_oku() fonksiyonuyla ayni fikir:
 // sol sensor cizgiyi goruyorsa hata negatif (sola kaymisiz demek,
 // saga donmemiz gerekir), sag sensor goruyorsa hata pozitif.
-float hata_hesapla() {
+// cizgi_var: cikis parametresi, sensorlerden hicbiri cizgi gormediyse false.
+float hata_hesapla(bool &cizgi_var) {
   bool sol  = digitalRead(IR_SOL_PIN)  == HIGH;
   bool orta = digitalRead(IR_ORTA_PIN) == HIGH;
   bool sag  = digitalRead(IR_SAG_PIN)  == HIGH;
 
+  cizgi_var = sol || orta || sag;
+
   if (orta) return 0.0;
   if (sol)  return -1.0;
   if (sag)  return  1.0;
-  return 0.0;   // cizgi kayboldu - simdilik duz git, gelistirilecek
+  return 0.0;
 }
 
 // HC-SR04 ultrasonik sensorden mesafe olcumu (cm cinsinden).
 float mesafe_olc_cm() {
+  // Bosta echo hatti LOW olmalidir. Tetikleme oncesi HIGH ise sensor
+  // veya kablolama arizali demektir (kopuk GND, bozuk modul); bu durumda
+  // pulseIn zaten anlamsiz bir deger dondurur.
+  if (digitalRead(ULTRASONIK_ECHO_PIN) == HIGH) return MESAFE_SENSOR_ARIZASI;
+
   digitalWrite(ULTRASONIK_TRIG_PIN, LOW);
   delayMicroseconds(2);
   digitalWrite(ULTRASONIK_TRIG_PIN, HIGH);
@@ -88,7 +107,10 @@ float mesafe_olc_cm() {
   digitalWrite(ULTRASONIK_TRIG_PIN, LOW);
 
   long sure_us = pulseIn(ULTRASONIK_ECHO_PIN, HIGH, 30000);  // 30ms timeout
-  if (sure_us == 0) return 999.0;  // yanit yok -> engel yok say
+  // Yanit yok = onumuzde ~5 m icinde yansitici yuzey yok. Bunu sayisal
+  // bir mesafe (eski hali: 999.0) olarak dondurmek gecerli bir olcumle
+  // karistirilmasina yol aciyordu; ayri bir donus kodu kullaniyoruz.
+  if (sure_us == 0) return MESAFE_MENZIL_DISI;
   return sure_us * 0.0343 / 2.0;
 }
 
@@ -111,6 +133,9 @@ void motorlari_sur(float pd_cikti) {
 void dur() {
   analogWrite(MOTOR_SOL_ILERI, 0);
   analogWrite(MOTOR_SAG_ILERI, 0);
+  digitalWrite(MOTOR_SOL_GERI, LOW);
+  digitalWrite(MOTOR_SAG_GERI, LOW);
+  onceki_hata = 0.0;   // duruslardan sonra turev sicramasini engelle
 }
 
 void loop() {
@@ -120,13 +145,32 @@ void loop() {
 
   float mesafe = mesafe_olc_cm();
 
-  if (mesafe < ESIK_ENGEL_CM) {
-    // Guvenlik onceligi: engel yakinsa dur.
+  if (mesafe == MESAFE_SENSOR_ARIZASI) {
+    ardisik_echo_arizasi++;
+  } else {
+    ardisik_echo_arizasi = 0;
+  }
+
+  bool cizgi_var = false;
+  float hata = hata_hesapla(cizgi_var);
+  if (cizgi_var) {
+    ardisik_cizgi_kaybi = 0;
+  } else {
+    ardisik_cizgi_kaybi++;
+  }
+
+  bool sensor_arizali = ardisik_echo_arizasi >= MAX_ARDISIK_ECHO_ARIZASI;
+  bool cizgi_kayip = ardisik_cizgi_kaybi >= MAX_ARDISIK_CIZGI_KAYBI;
+  bool engel_yakin = (mesafe >= 0.0) && (mesafe < ESIK_ENGEL_CM);
+
+  if (sensor_arizali || cizgi_kayip || engel_yakin) {
+    // Guvenlik onceligi: engel yakinsa, ultrasonik sensor arizali gorunuyorsa
+    // ya da cizgi kaybedildiyse dur. Cizgi kaybinda korumasiz "duz devam et"
+    // davranisi otonom bir aracta kabul edilemez.
     // (Python simulasyonundaki engelden_kac() mantigi burada
     // gelistirilecek - simdilik basit "dur" davranisi.)
     dur();
   } else {
-    float hata = hata_hesapla();
     float hata_hizi = (hata - onceki_hata) / dt;
     float pd_cikti = KP * hata + KD * hata_hizi;
 
@@ -149,6 +193,11 @@ void loop() {
   4. RF guvenlik katmani icin ikinci bir ESP32 dugumde
      WiFi.scanNetworks() ile OUI eslestirmesi yaz (simulasyon/
      sekil4_rf_guvenlik.py'deki ardisik dogrulama mantigiyla ayni).
+     DIKKAT: WiFi SSID/sifresi ve telemetri anahtarlari bu dosyaya
+     GOMULMEMELIDIR. Surum kontrolune girmeyen (.gitignore'da olan)
+     ayri bir gizli_ayarlar.h dosyasindan okunmalidir. Ayrica MAC/OUI
+     eslestirmesi kolayca taklit edilebilir; ayrintili tehdit modeli
+     ve sinirlar icin SECURITY.md'ye bakiniz.
   5. Seri port uzerinden telemetri (hata, PD ciktisi, mesafe)
      yayinlayip gercek/simulasyon davranisini karsilastir.
 */
