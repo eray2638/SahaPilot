@@ -69,6 +69,11 @@ class TestSeritTakip:
 
 
 class TestEngeldenKac:
+    def test_tam_merkezde_saga_kayar(self):
+        """``yol_uret`` araci tam merkezden baslattigi icin bu esik onemli."""
+        merkez = nav.GENISLIK // 2
+        assert nav.engelden_kac(merkez, 4, {4: {merkez}}) == merkez + 1
+
     def test_iki_yan_bos_sag_yariday_sola_kayar(self):
         robot_x = nav.GENISLIK // 2 + 1
         assert nav.engelden_kac(robot_x, 4, {4: {robot_x}}) == robot_x - 1

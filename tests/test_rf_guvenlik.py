@@ -4,6 +4,8 @@ Focus on ``tespit_algoritmasi`` (the consecutive-scan confirmation logic that
 suppresses false alarms) and on the determinism / shape of the synthetic scan
 generator, plus a smoke test of the figure generation.
 """
+import pytest
+
 import sekil4_rf_guvenlik as rf
 
 BILINEN = rf.BILINEN_OUI[0]
@@ -78,8 +80,10 @@ class TestTaramalariUret:
             for bilinen in rf.BILINEN_OUI:
                 assert bilinen in ouiler
 
-    def test_yabanci_cihaz_esikten_once_hic_gorunmez(self):
-        olcumler = rf.taramalari_uret()
+    @pytest.mark.parametrize("seed", [1, 3, 7, 11, 42, 1234])
+    def test_yabanci_cihaz_esikten_once_hic_gorunmez(self, seed):
+        """t == T_YABANCI_BASLAR dahil; tek bir seedin sansina birakilmamali."""
+        olcumler = rf.taramalari_uret(seed=seed)
         for t in range(rf.T_YABANCI_BASLAR + 1):
             assert all(oui != rf.YETKISIZ_OUI for oui, _ in olcumler[t])
 
