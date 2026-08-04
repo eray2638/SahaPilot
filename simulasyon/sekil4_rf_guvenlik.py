@@ -12,6 +12,7 @@ gorulmesi istenir (CFAR mantigindaki "ardisik dogrulama" fikrine
 benzer bir yaklasim).
 ============================================================
 """
+import sys
 import random
 import matplotlib.pyplot as plt
 
@@ -112,6 +113,19 @@ def uret_ve_ciz(dosya_adi="sekil4_rf_guvenlik_tespiti.png"):
     print("Kesin tespit taramasi:", kesin_tespit_t)
     print("Yanlis alarm sayisi (t<=30 icinde):", yanlis_alarm)
 
+    # Tespit hic gerceklesmediyse ya da yanlis alarm uretildiyse, sekil
+    # yine de olusur; bunu sadece "None" yazip gecmek, algoritmanin
+    # basarisiz oldugu bir kosuyu basarili gosterir.
+    basarisiz = False
+    if kesin_tespit_t is None:
+        print("[HATA] Yetkisiz cihaz hic tespit edilemedi", file=sys.stderr)
+        basarisiz = True
+    if yanlis_alarm > 0:
+        print(f"[HATA] Izinsiz giris oncesi {yanlis_alarm} yanlis alarm",
+              file=sys.stderr)
+        basarisiz = True
+    return basarisiz
+
 
 if __name__ == "__main__":
-    uret_ve_ciz()
+    sys.exit(1 if uret_ve_ciz() else 0)
