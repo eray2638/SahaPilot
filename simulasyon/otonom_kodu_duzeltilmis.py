@@ -149,7 +149,7 @@ def kareyi_ciz(robot_x, f, yol, engeller, durum, mesafe):
 
 # ---------------- ANA DÖNGÜ (DÜZELTİLMİŞ) ----------------
 def main(gecikme=GECIKME, ciz=True):
-    """Simülasyonu çalıştırır; oluşan çarpışma sayısını döndürür."""
+    """Simülasyonu çalıştırır; (çarpışma, sınır ihlali) sayılarını döndürür."""
     yol = yol_uret(ADIM)
     engeller = engel_uret(yol, ADIM)
     robot_x = yol[0]
@@ -207,10 +207,11 @@ def main(gecikme=GECIKME, ciz=True):
 
     print(f"\nSimulasyon tamamlandi. Carpisma: {carpisma}, "
           f"sinir ihlali: {sinir_ihlali}")
-    return carpisma
+    return carpisma, sinir_ihlali
 
 
 if __name__ == "__main__":
-    # Düzeltilmiş sürümün beklenen sonucu 0 çarpışmadır; aksi halde çıkış
-    # kodu sıfırdan farklı olsun ki regresyon koşularında fark edilsin.
-    sys.exit(1 if main() else 0)
+    # Düzeltilmiş sürümün beklenen sonucu hem 0 çarpışma hem 0 sınır
+    # ihlalidir; aksi halde çıkış kodu sıfırdan farklı olsun ki regresyon
+    # koşularında fark edilsin.
+    sys.exit(1 if any(main()) else 0)
