@@ -15,6 +15,8 @@ benzer bir yaklasim).
 import random
 import matplotlib.pyplot as plt
 
+from saha_ortak import grafik_kaydet
+
 N = 60                       # toplam tarama sayisi
 BILINEN_OUI = ["A4:C1:38", "3C:71:BF", "B8:27:EB"]
 YETKISIZ_OUI = "DE:AD:BE"
@@ -66,25 +68,26 @@ def tespit_algoritmasi(olcumler):
     return kesin_tespit_t, tespit_gecmisi, yanlis_alarm
 
 
+def rssi_serisi(olcumler, yabanci):
+    """Olcumlerden (zaman, rssi) noktalarini cikarir. yabanci=True ise
+    yalnizca yetkisiz OUI'ye, False ise yalnizca bilinen OUI'lere ait
+    noktalar dondurulur."""
+    zaman = []
+    rssi_list = []
+    for t, oui_listesi in enumerate(olcumler):
+        for oui, rssi in oui_listesi:
+            if (oui == YETKISIZ_OUI) == yabanci:
+                zaman.append(t)
+                rssi_list.append(rssi)
+    return zaman, rssi_list
+
+
 def uret_ve_ciz(dosya_adi="sekil4_rf_guvenlik_tespiti.png"):
     olcumler = taramalari_uret()
     kesin_tespit_t, gecmis, yanlis_alarm = tespit_algoritmasi(olcumler)
 
-    zaman = []
-    rssi_yabanci = []
-    for t, oui_listesi in enumerate(olcumler):
-        for oui, rssi in oui_listesi:
-            if oui == YETKISIZ_OUI:
-                zaman.append(t)
-                rssi_yabanci.append(rssi)
-
-    zaman_bilinen = []
-    rssi_bilinen = []
-    for t, oui_listesi in enumerate(olcumler):
-        for oui, rssi in oui_listesi:
-            if oui != YETKISIZ_OUI:
-                zaman_bilinen.append(t)
-                rssi_bilinen.append(rssi)
+    zaman, rssi_yabanci = rssi_serisi(olcumler, yabanci=True)
+    zaman_bilinen, rssi_bilinen = rssi_serisi(olcumler, yabanci=False)
 
     plt.figure(figsize=(9, 4.5))
     plt.scatter(zaman_bilinen, rssi_bilinen, s=14, color="tab:green",
@@ -101,14 +104,10 @@ def uret_ve_ciz(dosya_adi="sekil4_rf_guvenlik_tespiti.png"):
                      xytext=(kesin_tespit_t + 3, -58),
                      fontsize=9)
 
-    plt.xlabel("Scan step (t)")
-    plt.ylabel("RSSI (dBm)")
-    plt.title("Figure 4 - RF Security: Unauthorized Device Detection")
-    plt.legend(loc="upper left", fontsize=8)
-    plt.grid(alpha=0.3)
-    plt.tight_layout()
-    plt.savefig(dosya_adi, dpi=140)
-    print("Kaydedildi:", dosya_adi)
+    grafik_kaydet(dosya_adi,
+                  "Scan step (t)", "RSSI (dBm)",
+                  "Figure 4 - RF Security: Unauthorized Device Detection",
+                  legend_loc="upper left", legend_fontsize=8)
     print("Kesin tespit taramasi:", kesin_tespit_t)
     print("Yanlis alarm sayisi (t<=30 icinde):", yanlis_alarm)
 
