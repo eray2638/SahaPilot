@@ -47,6 +47,8 @@ A single unknown-OUI sighting is not treated as an intrusion (real-world RF scan
 
 This consecutive-confirmation approach is conceptually the same false-alarm-reduction idea used in CFAR (Constant False Alarm Rate) radar detection, applied here to a much simpler RF/MAC context.
 
+Important limitation: OUI matching is an intrusion *signal*, not authentication — MAC addresses are trivially spoofable and modern devices randomize them. See [`SECURITY.md`](SECURITY.md) for the threat model.
+
 ### 3.3 Obstacle avoidance bug fix (`simulasyon/otonom_kodu_duzeltilmis.py`)
 
 An earlier version of the line-following + obstacle-avoidance logic had a real bug, found via randomized testing (not just code review): the ultrasonic "look ahead" check and the line-centering logic used different frames of reference, so the vehicle could sense an obstacle, begin avoiding it, and then get pulled straight back onto it by the line-centering step. This produced ~1,000 collisions across 200 randomized test runs. The fix adds one explicit check — "does my candidate next position collide with an obstacle *in the current row*, regardless of which behavior chose it?" — before committing to a move. Verified fix: 0 collisions across the same 200 test seeds.

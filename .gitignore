@@ -1,0 +1,27 @@
+# Gizli bilgiler - asla surum kontrolune girmemeli
+.env
+.env.*
+*.pem
+*.key
+*.p12
+secrets.json
+gizli_ayarlar.h
+firmware/gizli_ayarlar.h
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+
+# Arduino / PlatformIO derleme ciktilari
+.pio/
+build/
+*.bin
+*.elf
+
+# Isletim sistemi / editor
+.DS_Store
+.vscode/
+.idea/
