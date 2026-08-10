@@ -27,6 +27,7 @@ yorumuyla işaretli blok). Çakışıyorsa hareketi iptal edip o satır
 için kaçınmayı zorluyoruz. Bu tek kontrolle çarpışma 1009 -> 0 indi.
 ============================================================
 """
+import sys
 import time
 import random
 
@@ -101,18 +102,29 @@ def serit_takip(robot_x, serit_x):
 
 
 def engelden_kac(robot_x, engel_satir, engeller):
-    """Engelin olmadığı yana doğru bir adım kayar."""
-    bloklu = engeller[engel_satir]
+    """Engelin olmadığı yana doğru bir adım kayar.
+
+    (yeni_x, kacabildi) döndürür. İki yan da kapalıysa kacabildi False
+    olur: robot yerinde kalır ve çağıran taraf bunu bir başarısızlık
+    olarak ele almalıdır -- sessizce aynı konumu döndürmek "güvenli
+    konumdayım" ile "kaçacak yer yok" durumlarını birbirine karıştırır.
+    """
+    if engel_satir is None:
+        raise ValueError("engelden_kac() engel satırı olmadan çağrıldı")
+    bloklu = engeller.get(engel_satir)
+    if bloklu is None:
+        raise KeyError(f"engelsiz satır için kaçınma istendi: {engel_satir}")
+
     sol_bos = (robot_x - 1 >= 0) and (robot_x - 1 not in bloklu)
     sag_bos = (robot_x + 1 < GENISLIK) and (robot_x + 1 not in bloklu)
     if sol_bos and sag_bos:
-        return robot_x - 1 if robot_x > GENISLIK // 2 else robot_x + 1
+        return (robot_x - 1 if robot_x > GENISLIK // 2 else robot_x + 1), True
     elif sol_bos:
-        return robot_x - 1
+        return robot_x - 1, True
     elif sag_bos:
-        return robot_x + 1
+        return robot_x + 1, True
     else:
-        return robot_x                # her iki yan da kapalı -> bekle
+        return robot_x, False         # her iki yan da kapalı -> bekle
 
 
 # ---------------- GÖRSELLEŞTİRME ----------------
@@ -136,10 +148,14 @@ def kareyi_ciz(robot_x, f, yol, engeller, durum, mesafe):
 
 
 # ---------------- ANA DÖNGÜ (DÜZELTİLMİŞ) ----------------
-def main():
+def main(gecikme=GECIKME, ciz=True):
+    """Simülasyonu çalıştırır; (çarpışma, sınır ihlali) sayılarını döndürür."""
     yol = yol_uret(ADIM)
     engeller = engel_uret(yol, ADIM)
     robot_x = yol[0]
+
+    carpisma = 0
+    sinir_ihlali = 0
 
     for f in range(ADIM):
         mesafe, engel_satir = ultrasonik_oku(robot_x, f, engeller)
@@ -147,7 +163,9 @@ def main():
         if mesafe <= ESIK_ENGEL:
             # İleride birkaç satır sonra engel var, şimdiden kaçınmaya başla.
             durum = "ENGELDEN KAC (ileri gorus)"
-            aday = engelden_kac(robot_x, engel_satir, engeller)
+            aday, kacabildi = engelden_kac(robot_x, engel_satir, engeller)
+            if not kacabildi:
+                durum = "KACIS YOK (iki yan da kapali)"
         else:
             # İleride engel görünmüyor, normalde şeride dön.
             durum = "SERIT TAKIP"
@@ -160,16 +178,40 @@ def main():
         # bir engelle çakışıyor mu? Orijinal kodda bu kontrol yoktu.
         if aday in engeller.get(f, set()):
             durum = "SON AN KACINMA (bu satirda engel var)"
-            aday = engelden_kac(aday, f, engeller)
+            aday, kacabildi = engelden_kac(aday, f, engeller)
+            if not kacabildi:
+                durum = "CARPISMA KACINILMAZ (kacacak yer yok)"
+
+        # Sınır dışına taşan bir karar mantık hatasıdır; kırpma onu
+        # düzeltmez, yalnızca gizler -- bu yüzden ayrıca sayıyoruz.
+        if not 0 <= aday < GENISLIK:
+            sinir_ihlali += 1
+            print(f"[UYARI] satir {f}: kontrol sinir disi konum onerdi "
+                  f"({aday}), yola kirpildi", file=sys.stderr)
 
         robot_x = max(0, min(GENISLIK - 1, aday))   # sınır kontrolü
 
-        kareyi_ciz(robot_x, f, yol, engeller, durum,
-                   mesafe if mesafe <= LOOKAHEAD else "-")
-        time.sleep(GECIKME)
+        # Düzeltmenin geçerliliği ancak fiilen ölçerek doğrulanabilir:
+        # robot bir engelin üzerinde kaldıysa bu bir çarpışmadır ve
+        # simülasyonun sessizce devam etmesine izin verilmemelidir.
+        if robot_x in engeller.get(f, set()):
+            carpisma += 1
+            durum = "CARPISMA"
+            print(f"[HATA] satir {f}: engelle carpisma (x={robot_x})",
+                  file=sys.stderr)
 
-    print("\nSimulasyon tamamlandi.")
+        if ciz:
+            kareyi_ciz(robot_x, f, yol, engeller, durum,
+                       mesafe if mesafe <= LOOKAHEAD else "-")
+            time.sleep(gecikme)
+
+    print(f"\nSimulasyon tamamlandi. Carpisma: {carpisma}, "
+          f"sinir ihlali: {sinir_ihlali}")
+    return carpisma, sinir_ihlali
 
 
 if __name__ == "__main__":
-    main()
+    # Düzeltilmiş sürümün beklenen sonucu hem 0 çarpışma hem 0 sınır
+    # ihlalidir; aksi halde çıkış kodu sıfırdan farklı olsun ki regresyon
+    # koşularında fark edilsin.
+    sys.exit(1 if any(main()) else 0)
