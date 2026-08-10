@@ -14,6 +14,9 @@ __pycache__/
 .venv/
 venv/
 env/
+.pytest_cache/
+.coverage
+htmlcov/
 
 # Arduino / PlatformIO derleme ciktilari
 .pio/
@@ -25,3 +28,7 @@ build/
 .DS_Store
 .vscode/
 .idea/
+
+# Simulasyon ciktilari
+*.png
+!gorseller/*.png
