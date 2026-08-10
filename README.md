@@ -53,6 +53,14 @@ Important limitation: OUI matching is an intrusion *signal*, not authentication 
 
 An earlier version of the line-following + obstacle-avoidance logic had a real bug, found via randomized testing (not just code review): the ultrasonic "look ahead" check and the line-centering logic used different frames of reference, so the vehicle could sense an obstacle, begin avoiding it, and then get pulled straight back onto it by the line-centering step. This produced ~1,000 collisions across 200 randomized test runs. The fix adds one explicit check — "does my candidate next position collide with an obstacle *in the current row*, regardless of which behavior chose it?" — before committing to a move. Verified fix: 0 collisions across the same 200 test seeds.
 
+### 3.4 Fault handling and fail-safe behaviour
+
+Sensor and control faults are treated as first-class states rather than being folded into a "looks fine" value:
+
+- **Ultrasonic read failure** (`firmware/`): a missing echo or an out-of-range reading returns an explicit error value instead of "no obstacle ahead". After 3 consecutive failed reads the vehicle stops — driving blind is the failure mode that actually causes collisions.
+- **Line lost** (`firmware/`): a lost line is reported separately from "perfectly centered" (both used to be error = 0). Short dropouts hold the last correction; after 10 consecutive frames the vehicle stops instead of drifting on stale PD state.
+- **No escape route** (`simulasyon/otonom_kodu_duzeltilmis.py`): when both sides of an obstacle are blocked, the avoidance routine reports that it could not move rather than silently returning the current position, and the simulation counts and reports actual collisions and out-of-bounds decisions instead of clamping them away. Both simulation entry points exit non-zero when their success criteria are not met, so a broken run cannot pass unnoticed.
+
 ## 4. Repository structure
 
 ```
