@@ -42,9 +42,22 @@ const float KP = 4.0;
 const float KD = 2.0;
 const float ESIK_ENGEL_CM = 15.0;   // bu mesafenin altinda engelden kac
 
+// HC-SR04 gecerli olcum araligi; bunun disi hatali okuma sayilir.
+const float MESAFE_MIN_CM = 2.0;
+const float MESAFE_MAX_CM = 400.0;
+// Olcum yapilamadigini belirten deger ("engel yok" ile karistirilmamali).
+const float MESAFE_HATA = -1.0;
+
+// Bu kadar ust uste hatali okumadan sonra guvenli tarafta kalip dururuz.
+const int MAX_ARDISIK_SENSOR_HATASI = 3;
+// Cizgi bu kadar ust uste kaybedilirse arac durur.
+const int MAX_ARDISIK_CIZGI_KAYBI = 10;
+
 // ---------------- DURUM DEGISKENLERI ----------------
 float onceki_hata = 0.0;
 unsigned long onceki_zaman_ms = 0;
+int ardisik_sensor_hatasi = 0;
+int ardisik_cizgi_kaybi = 0;
 
 void setup() {
   Serial.begin(115200);
@@ -68,18 +81,24 @@ void setup() {
 // Donusum mantigi Python'daki ir_oku() fonksiyonuyla ayni fikir:
 // sol sensor cizgiyi goruyorsa hata negatif (sola kaymisiz demek,
 // saga donmemiz gerekir), sag sensor goruyorsa hata pozitif.
-float hata_hesapla() {
+// Cizgi bulunduysa true doner ve hatayi *hata parametresine yazar.
+// Cizgi kaybedildiginde false doner: bu durum "hata = 0" (tam merkezde)
+// ile ayni sey degildir, cagiran taraf ikisini ayirt edebilmelidir.
+bool hata_hesapla(float *hata) {
   bool sol  = digitalRead(IR_SOL_PIN)  == HIGH;
   bool orta = digitalRead(IR_ORTA_PIN) == HIGH;
   bool sag  = digitalRead(IR_SAG_PIN)  == HIGH;
 
-  if (orta) return 0.0;
-  if (sol)  return -1.0;
-  if (sag)  return  1.0;
-  return 0.0;   // cizgi kayboldu - simdilik duz git, gelistirilecek
+  if (orta) { *hata =  0.0; return true; }
+  if (sol)  { *hata = -1.0; return true; }
+  if (sag)  { *hata =  1.0; return true; }
+  return false;   // cizgi kayboldu
 }
 
 // HC-SR04 ultrasonik sensorden mesafe olcumu (cm cinsinden).
+// Olcum alinamazsa veya sonuc sensorun gecerli araligi disindaysa
+// MESAFE_HATA doner. Bu durumu "engel yok" olarak yorumlamak guvenli
+// degildir: sensor arizasi tam da engele carpma anlamina gelebilir.
 float mesafe_olc_cm() {
   digitalWrite(ULTRASONIK_TRIG_PIN, LOW);
   delayMicroseconds(2);
@@ -88,8 +107,11 @@ float mesafe_olc_cm() {
   digitalWrite(ULTRASONIK_TRIG_PIN, LOW);
 
   long sure_us = pulseIn(ULTRASONIK_ECHO_PIN, HIGH, 30000);  // 30ms timeout
-  if (sure_us == 0) return 999.0;  // yanit yok -> engel yok say
-  return sure_us * 0.0343 / 2.0;
+  if (sure_us <= 0) return MESAFE_HATA;   // echo yok -> olcum basarisiz
+
+  float mesafe = sure_us * 0.0343 / 2.0;
+  if (mesafe < MESAFE_MIN_CM || mesafe > MESAFE_MAX_CM) return MESAFE_HATA;
+  return mesafe;
 }
 
 // Diferansiyel surus: PD ciktisina gore sol/sag motor hizini ayarla.
@@ -111,6 +133,14 @@ void motorlari_sur(float pd_cikti) {
 void dur() {
   analogWrite(MOTOR_SOL_ILERI, 0);
   analogWrite(MOTOR_SAG_ILERI, 0);
+  digitalWrite(MOTOR_SOL_GERI, LOW);
+  digitalWrite(MOTOR_SAG_GERI, LOW);
+}
+
+// Arac dururken turev terimi eski hatayla siserek, hareket tekrar
+// basladiginda ani bir direksiyon sicramasi uretir; durusta sifirlanir.
+void pd_durumunu_sifirla() {
+  onceki_hata = 0.0;
 }
 
 void loop() {
@@ -120,19 +150,59 @@ void loop() {
 
   float mesafe = mesafe_olc_cm();
 
+  if (mesafe < 0.0) {   // MESAFE_HATA
+    ardisik_sensor_hatasi++;
+    Serial.print("[HATA] Ultrasonik olcum basarisiz, ardisik: ");
+    Serial.println(ardisik_sensor_hatasi);
+
+    if (ardisik_sensor_hatasi >= MAX_ARDISIK_SENSOR_HATASI) {
+      // Engel bilgisi olmadan surmek yerine guvenli tarafta kal.
+      Serial.println("[KRITIK] Mesafe sensoru yanit vermiyor -> arac durduruldu");
+      dur();
+      pd_durumunu_sifirla();
+      onceki_zaman_ms = simdi_ms;
+      delay(20);
+      return;
+    }
+    // Tek tuk kacirilan echo'lar normaldir: esige ulasilana kadar
+    // son bilinen davranisi surdurmek yerine bu dongude sadece bekle.
+    onceki_zaman_ms = simdi_ms;
+    delay(20);
+    return;
+  }
+  ardisik_sensor_hatasi = 0;
+
   if (mesafe < ESIK_ENGEL_CM) {
     // Guvenlik onceligi: engel yakinsa dur.
     // (Python simulasyonundaki engelden_kac() mantigi burada
     // gelistirilecek - simdilik basit "dur" davranisi.)
     dur();
+    pd_durumunu_sifirla();
   } else {
-    float hata = hata_hesapla();
-    float hata_hizi = (hata - onceki_hata) / dt;
-    float pd_cikti = KP * hata + KD * hata_hizi;
+    float hata = 0.0;
+    if (hata_hesapla(&hata)) {
+      ardisik_cizgi_kaybi = 0;
 
-    motorlari_sur(pd_cikti);
+      float hata_hizi = (hata - onceki_hata) / dt;
+      float pd_cikti = KP * hata + KD * hata_hizi;
 
-    onceki_hata = hata;
+      motorlari_sur(pd_cikti);
+      onceki_hata = hata;
+    } else {
+      ardisik_cizgi_kaybi++;
+      Serial.print("[UYARI] Cizgi kayboldu, ardisik: ");
+      Serial.println(ardisik_cizgi_kaybi);
+
+      if (ardisik_cizgi_kaybi >= MAX_ARDISIK_CIZGI_KAYBI) {
+        // Cizgi kalici olarak kaybedildi: rastgele suruklenmek yerine dur.
+        Serial.println("[KRITIK] Cizgi bulunamiyor -> arac durduruldu");
+        dur();
+        pd_durumunu_sifirla();
+      } else {
+        // Kisa sureli kayiplarda son bilinen duzeltmeyi koru.
+        motorlari_sur(KP * onceki_hata);
+      }
+    }
   }
 
   onceki_zaman_ms = simdi_ms;
@@ -146,6 +216,8 @@ void loop() {
      analog esikleme) gercek zeminde kalibre et.
   3. engelden_kac() mantigini (Python'daki gibi sola/saga kacinma)
      burada da uygula, sadece "dur" ile yetinme.
+  3b. Sensor arizasi / cizgi kaybi durumlarini seri porta yazmakla
+     yetinmeyip merkezi panele (MQTT) da bildir.
   4. RF guvenlik katmani icin ikinci bir ESP32 dugumde
      WiFi.scanNetworks() ile OUI eslestirmesi yaz (simulasyon/
      sekil4_rf_guvenlik.py'deki ardisik dogrulama mantigiyla ayni).
